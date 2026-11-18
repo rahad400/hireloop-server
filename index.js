@@ -24,6 +24,15 @@ export async function connectToMongoDB() {
 };
 
 const hireloopConnect = await connectToMongoDB()
+const  database = hireloopConnect.db('hire-client')
+const user = database.collection('user')
+
+app.get('/user', async (req,res)=>{
+    const cursor = await user.find({}).toArray()
+    res.send(cursor)
+})
+
+
 
 app.get("/", (req, res) => {
   res.send("hello Hireloop-Server");
