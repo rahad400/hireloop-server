@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import "dotenv/config";
-import { MongoClient } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 
 const app = express();
 const port = process.env.PORT || 8000;
@@ -46,6 +46,14 @@ app.post('/jobs',async(req,res)=>{
 app.get('/jobs', async (req,res) =>{
   const job = await jobs.find({}).toArray()  
   res.send(job)
+})
+
+
+app.delete('/jobs/:id',async (req,res)=>{
+const id = req.params.id
+const query = {_id: new ObjectId(id)};
+const result = await jobs.deleteOne(query)
+res.send(result)
 })
 
 app.get("/", (req, res) => {
