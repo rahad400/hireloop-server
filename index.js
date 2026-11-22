@@ -21,40 +21,62 @@ export async function connectToMongoDB() {
   } catch (err) {
     console.dir(err);
   }
-};
+}
 
-const hireloopConnect = await connectToMongoDB()
-const  database = hireloopConnect.db('hire-client')
-const user = database.collection('user')
-const jobs = database.collection('jobs');
+const hireloopConnect = await connectToMongoDB();
+const database = hireloopConnect.db("hire-client");
+const user = database.collection("user");
+const jobs = database.collection("jobs");
 
-app.get('/user', async (req,res)=>{
-    const cursor = await user.find({}).toArray()
-    res.send(cursor)
+// user api
+app.get("/user", async (req, res) => {
+  const cursor = await user.find({}).toArray();
+  res.send(cursor);
 });
 
-app.post('/jobs',async(req,res)=>{
-  const job = req.body
-  if (!job || typeof job !== 'object' || Array.isArray(job)) {
-    return res.status(400).send({ error: 'Request body must be a JSON object' })
+// jobs create api
+app.post("/jobs", async (req, res) => {
+  const job = req.body;
+  if (!job || typeof job !== "object" || Array.isArray(job)) {
+    return res
+      .status(400)
+      .send({ error: "Request body must be a JSON object" });
   }
-  const result = await jobs.insertOne(job)
-  res.send(result)
+  const result = await jobs.insertOne(job);
+  res.send(result);
+});
+
+app.get("/jobs", async (req, res) => {
+  const job = await jobs.find({}).toArray();
+  res.send(job);
+});
+
+// Update Details API
+
+app.patch('/jobs/:id', async(req,res)=>{
+  const id = req.params.id;
+  const cursor = await jobs.updateOne({_id:new ObjectId(id)},{$set:req.body})
+res.send(cursor)
 })
 
 
-app.get('/jobs', async (req,res) =>{
-  const job = await jobs.find({}).toArray()  
-  res.send(job)
-})
+// delete API
+app.delete("/jobs/:id", async (req, res) => {
+  const id = req.params.id;
 
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).send({ error: "Invalid job id" });
+  }
 
-app.delete('/jobs/:id',async (req,res)=>{
-const id = req.params.id
-const query = {_id: new ObjectId(id)};
-const result = await jobs.deleteOne(query)
-res.send(result)
-})
+  const result = await jobs.deleteOne({ _id: new ObjectId(id) });
+
+  if (result.deletedCount === 0) {
+    return res.status(404).send({ error: "Job not found" });
+  }
+
+  res.send(result);
+});
+
 
 app.get("/", (req, res) => {
   res.send("hello Hireloop-Server");
