@@ -47,8 +47,44 @@ app.post("/jobs", async (req, res) => {
 });
 
 app.get("/jobs", async (req, res) => {
-  const job = await jobs.find({}).toArray();
-  res.send(job);
+  try {
+    const query = {};
+
+    const { search, type, category, status } = req.query;
+
+    // Search by title, responsibilities, requirements
+    if (search) {
+      query.$or = [
+        { title: { $regex: search, $options: "i" } },
+        { responsibilities: { $regex: search, $options: "i" } },
+        { requirements: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    // Filter by job type
+    if (type) {
+      query.type = type;
+    }
+
+    // Filter by category
+    if (category) {
+      query.category = category;
+    }
+
+    // Filter by status
+    if (status) {
+      query.status = status;
+    }
+
+    const result = await jobs.find(query).toArray();
+
+    res.status(200).send(result);
+  } catch (error) {
+    res.status(500).send({
+      message: "Failed to fetch jobs",
+      error: error.message,
+    });
+  }
 });
 
 // Update Details API
