@@ -50,7 +50,8 @@ app.get("/jobs", async (req, res) => {
   try {
     const query = {};
 
-    const { search, type, category, status } = req.query;
+    const { search, type, category, status, location, company, frequency, isRemote } =
+      req.query;
 
     // Search by title, responsibilities, requirements
     if (search) {
@@ -62,18 +63,40 @@ app.get("/jobs", async (req, res) => {
     }
 
     // Filter by job type
-    if (type) {
+    if (type && type !== "all") {
       query.type = type;
     }
 
     // Filter by category
-    if (category) {
+    if (category && category !== "all") {
       query.category = category;
     }
 
     // Filter by status
-    if (status) {
+    if (status && status !== "all") {
       query.status = status;
+    }
+
+    // Filter by location
+    if (location && location !== "all") {
+      query.location = location;
+    }
+
+    // Filter by company
+    if (company && company !== "all") {
+      query.company = company;
+    }
+
+    // Filter by salary frequency
+    if (frequency && frequency !== "all") {
+      query.frequency = frequency;
+    }
+
+    // Filter by work mode ("remote" / "onsite" map to the boolean field)
+    if (isRemote === "remote") {
+      query.isRemote = true;
+    } else if (isRemote === "onsite") {
+      query.isRemote = false;
     }
 
     const result = await jobs.find(query).toArray();
