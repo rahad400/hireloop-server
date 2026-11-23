@@ -50,8 +50,16 @@ app.get("/jobs", async (req, res) => {
   try {
     const query = {};
 
-    const { search, type, category, status, location, company, frequency, isRemote } =
-      req.query;
+    const {
+      search,
+      type,
+      category,
+      status,
+      location,
+      company,
+      frequency,
+      isRemote,
+    } = req.query;
 
     // Search by title, responsibilities, requirements
     if (search) {
@@ -143,12 +151,14 @@ app.get("/jobs", async (req, res) => {
 
 // Update Details API
 
-app.patch('/jobs/:id', async(req,res)=>{
+app.patch("/jobs/:id", async (req, res) => {
   const id = req.params.id;
-  const cursor = await jobs.updateOne({_id:new ObjectId(id)},{$set:req.body})
-res.send(cursor)
-})
-
+  const cursor = await jobs.updateOne(
+    { _id: new ObjectId(id) },
+    { $set: req.body },
+  );
+  res.send(cursor);
+});
 
 // delete API
 app.delete("/jobs/:id", async (req, res) => {
@@ -167,6 +177,19 @@ app.delete("/jobs/:id", async (req, res) => {
   res.send(result);
 });
 
+app.get("/job/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    const result = await jobs.findOne(query);
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({
+      message: "Failed to fetch job details",
+      error: error.message,
+    });
+  }
+});
 
 app.get("/", (req, res) => {
   res.send("hello Hireloop-Server");
