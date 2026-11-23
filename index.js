@@ -99,7 +99,38 @@ app.get("/jobs", async (req, res) => {
       query.isRemote = false;
     }
 
-    const result = await jobs.find(query).toArray();
+    // Sort the results. `_id` is an ObjectId, so it also works as a
+    // "newest first" marker even though jobs have no createdAt field.
+    const sort = req.query.sort;
+    let result;
+
+    if (sort === "highest-salary") {
+      // Salaries are stored as strings, so convert them to numbers first.
+      result = await jobs
+        .aggregate([
+          { $match: query },
+          {
+            $addFields: {
+              salaryRank: {
+                $convert: {
+                  input: "$maxSalary",
+                  to: "double",
+                  onError: 0,
+                  onNull: 0,
+                },
+              },
+            },
+          },
+          { $sort: { salaryRank: -1, _id: -1 } },
+          { $project: { salaryRank: 0 } },
+        ])
+        .toArray();
+    } else {
+      // "oldest" is the only ascending order. "most-recent" and
+      // "most-relevant" (no relevance score yet) fall back to newest first.
+      const direction = sort === "oldest" ? 1 : -1;
+      result = await jobs.find(query).sort({ _id: direction }).toArray();
+    }
 
     res.status(200).send(result);
   } catch (error) {
