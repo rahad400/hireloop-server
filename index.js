@@ -27,7 +27,7 @@ const hireloopConnect = await connectToMongoDB();
 const database = hireloopConnect.db("hire-client");
 const user = database.collection("user");
 const jobs = database.collection("jobs");
-const aplication = database.collection('aplication')
+const applications = database.collection("aplication");
 // user api
 app.get("/user", async (req, res) => {
   const cursor = await user.find({}).toArray();
@@ -177,7 +177,6 @@ app.delete("/jobs/:id", async (req, res) => {
   res.send(result);
 });
 
-
 // View details page api
 app.get("/job/:id", async (req, res) => {
   try {
@@ -194,11 +193,19 @@ app.get("/job/:id", async (req, res) => {
 });
 
 // aplication api
-app.post('/application',async(req,res)=>{
-  const aplication = req.body;
-  const result = await aplication.insertOne(aplication)
-  res.send(result)
+app.post("/application", async (req, res) => {
+  const application = req.body;
+  const result = await applications.insertOne(application);
+  res.send(result);
 
+  // console.log('aplication:',application)
+  // console.log('result',result)
+});
+
+app.get('/application',async(req,res)=>{
+  const query = {}
+  const result = await applications.find(query).toArray()
+  res.send(result)
 })
 
 app.get("/", (req, res) => {
