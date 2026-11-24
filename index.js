@@ -6,8 +6,31 @@ import { MongoClient, ObjectId } from "mongodb";
 const app = express();
 const port = process.env.PORT || 8000;
 // middleware
+const clientOrigin = process.env.CLIENT_ORIGIN || "http://localhost:3000";
+const authBaseUrl = process.env.BETTER_AUTH_URL || "http://localhost:3000";
+
 app.use(express.json());
-app.use(cors());
+app.use(cors({ origin: clientOrigin, credentials: true }));
+
+/** Ask the Next.js auth route who is signed in, then trust that user id. */
+async function getAuthenticatedUser(req) {
+  const cookie = req.headers.cookie;
+  if (!cookie) return null;
+
+  try {
+    const response = await fetch(`${authBaseUrl}/api/auth/get-session`, {
+      headers: { cookie },
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+
+    const session = await response.json();
+    return session?.user ?? null;
+  } catch (error) {
+    console.error("Could not verify session:", error.message);
+    return null;
+  }
+}
 
 const client = new MongoClient(
   `mongodb+srv://${process.env.MOMGODB_USER_ID}:${process.env.MONGODB_PASS}@cluster0.u23ovjm.mongodb.net/`,
@@ -28,6 +51,19 @@ const database = hireloopConnect.db("hire-client");
 const user = database.collection("user");
 const jobs = database.collection("jobs");
 const applications = database.collection("aplication");
+
+// One application per user + job. The partial filter keeps older test records
+// (which have no dedupeKey) from blocking the index; every new application
+// carries a dedupeKey, so new duplicates are rejected by MongoDB itself.
+await applications.createIndex(
+  { userId: 1, jobId: 1 },
+  {
+    name: "application_user_job_uidx",
+    unique: true,
+    partialFilterExpression: { dedupeKey: { $exists: true } },
+  },
+);
+
 // user api
 app.get("/user", async (req, res) => {
   const cursor = await user.find({}).toArray();
@@ -194,19 +230,77 @@ app.get("/job/:id", async (req, res) => {
 
 // aplication api
 app.post("/application", async (req, res) => {
-  const application = req.body;
-  const result = await applications.insertOne(application);
-  res.send(result);
+  const user = await getAuthenticatedUser(req);
+  if (!user) {
+    return res.status(401).send({ error: "You must be signed in to apply." });
+  }
 
-  // console.log('aplication:',application)
-  // console.log('result',result)
+  if (user.role && user.role !== "candidate") {
+    return res
+      .status(403)
+      .send({ error: "Only candidates can apply for jobs." });
+  }
+
+  const { jobId } = req.body ?? {};
+  if (typeof jobId !== "string" || !jobId.trim()) {
+    return res.status(400).send({ error: "jobId is required" });
+  }
+
+  if (!ObjectId.isValid(jobId)) {
+    return res.status(400).send({ error: "Invalid job id" });
+  }
+
+  // The signed-in user id is the source of truth; never trust req.body.userId.
+  const userId = user.id;
+  const existingApplication = await applications.findOne({ userId, jobId });
+  if (existingApplication) {
+    return res
+      .status(409)
+      .send({ error: "You have already applied for this job." });
+  }
+
+  const job = await jobs.findOne({ _id: new ObjectId(jobId) });
+  if (!job) {
+    return res.status(404).send({ error: "Job not found" });
+  }
+
+  const application = {
+    userId,
+    jobId,
+    email: user.email,
+    name: user.name,
+    jobTitle: job.title,
+    company: job.company,
+    appliedAt: new Date().toISOString(),
+    dedupeKey: `${userId}:${jobId}`,
+  };
+
+  try {
+    const result = await applications.insertOne(application);
+    res.send(result);
+  } catch (error) {
+    // The unique index is the final guard if two requests arrive together.
+    if (error?.code === 11000) {
+      return res
+        .status(409)
+        .send({ error: "You have already applied for this job." });
+    }
+    throw error;
+  }
 });
 
-app.get('/application',async(req,res)=>{
-  const query = {}
-  const result = await applications.find(query).toArray()
-  res.send(result)
-})
+app.get("/application", async (req, res) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) {
+    return res.status(401).send({ error: "You must be signed in." });
+  }
+
+  const result = await applications
+    .find({ userId: user.id })
+    .sort({ _id: -1 })
+    .toArray();
+  res.send(result);
+});
 
 app.get("/", (req, res) => {
   res.send("hello Hireloop-Server");
