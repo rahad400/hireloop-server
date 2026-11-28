@@ -52,8 +52,8 @@ const database = hireloopConnect.db("hire-client");
 const user = database.collection("user");
 const jobs = database.collection("jobs");
 const applications = database.collection("aplication");
-const saves= database.collection("save");
-const payments= database.collection("payments");
+const saves = database.collection("save");
+const payments = database.collection("payments");
 
 // One saved job per user + job. The partial filter keeps older records
 // (which have no dedupeKey) from blocking the index.
@@ -86,19 +86,28 @@ app.get("/user", async (req, res) => {
 
 // jobs create api
 app.post("/jobs", async (req, res) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) {
+    return res.status(404).send({ error: "Please login first" });
+  }
   const job = req.body;
   if (!job || typeof job !== "object" || Array.isArray(job)) {
     return res
       .status(400)
       .send({ error: "Request body must be a JSON object" });
   }
+  job.employerId = user.id;
   const result = await jobs.insertOne(job);
   res.send(result);
 });
 
 app.get("/jobs", async (req, res) => {
+  const user = await getAuthenticatedUser(req);
+  if (!user) {
+    return req.status(404).send({ error: "Please login first" });
+  }
   try {
-    const query = {};
+    const query = { employerId: user.id };
 
     const {
       search,
@@ -109,6 +118,7 @@ app.get("/jobs", async (req, res) => {
       company,
       frequency,
       isRemote,
+      employerId,
     } = req.query;
 
     // Search by title, responsibilities, requirements
@@ -316,98 +326,102 @@ app.get("/application", async (req, res) => {
   res.send(result);
 });
 
-// count and apply limite 
-app.get('/application/count',async(req,res)=>{
-  const query ={}
-  const { applicantId } = req.query
+// count and apply limite
+app.get("/application/count", async (req, res) => {
+  const query = {};
+  const { applicantId } = req.query;
   if (applicantId !== undefined && typeof applicantId !== "string") {
-    return res.status(400).send({ error: "applicantId must be a string" })
+    return res.status(400).send({ error: "applicantId must be a string" });
   }
-  if(applicantId){
-    query.userId = applicantId
+  if (applicantId) {
+    query.userId = applicantId;
   }
-  const count = await applications.countDocuments(query)
-  res.send({count : count})
-})
+  const count = await applications.countDocuments(query);
+  res.send({ count: count });
+});
 
 // save jobs API
-app.post('/save',async(req,res)=>{
-const { userId, jobId } = req.body ?? {};
+app.post("/save", async (req, res) => {
+  const { userId, jobId } = req.body ?? {};
 
-if (!userId || !jobId) {
-  return res.status(400).send({ error: "userId and jobId are required" });
-}
+  if (!userId || !jobId) {
+    return res.status(400).send({ error: "userId and jobId are required" });
+  }
 
-const dedupeKey = `${userId}:${jobId}`;
-const existing = await saves.findOne({
-  $or: [{ userId, jobId }, { dedupeKey }],
+  const dedupeKey = `${userId}:${jobId}`;
+  const existing = await saves.findOne({
+    $or: [{ userId, jobId }, { dedupeKey }],
+  });
+
+  if (existing) {
+    return res.status(409).send({ error: "You have already saved this job." });
+  }
+
+  const save = { ...req.body, dedupeKey };
+  const result = await saves.insertOne(save);
+  res.send(result);
 });
 
-if (existing) {
-  return res.status(409).send({ error: "You have already saved this job." });
-}
-
-const save = { ...req.body, dedupeKey };
-const result = await saves.insertOne(save)
-res.send(result)
-});
-
-app.get('/save',async(req,res)=>{
-  const query = {}
-  const result = await saves.find(query).toArray()
-  res.send(result)
+app.get("/save", async (req, res) => {
+  const query = {};
+  const result = await saves.find(query).toArray();
+  res.send(result);
   // console.log(saves)
-})
+});
 
-// payments API 
-app.post('/payments/payment-verify',async (req,res)=>{
-  const {sessionId} = req.body;
+// payments API
+app.post("/payments/payment-verify", async (req, res) => {
+  const { sessionId } = req.body;
 
-  const { status, metadata, customer_email, payment_intent, payment_status} = await stripe.checkout.sessions.retrieve(sessionId)
+  const { status, metadata, customer_email, payment_intent, payment_status } =
+    await stripe.checkout.sessions.retrieve(sessionId);
 
-  if(status === 'complete' && payment_status === "paid"){
-    const sessionQury = {sessionId}
-    const existingPayment = await payments.findOne(sessionQury)
-    if(existingPayment){
-      return res.send({status:false,message:'Alrady verified payment'})
+  if (status === "complete" && payment_status === "paid") {
+    const sessionQury = { sessionId };
+    const existingPayment = await payments.findOne(sessionQury);
+    if (existingPayment) {
+      return res.send({ status: false, message: "Alrady verified payment" });
     }
     const payment = {
       sessionId,
       status,
-      userId:metadata.userId,
-      payment_date:new Date(),
+      userId: metadata.userId,
+      payment_date: new Date(),
       customer_email,
       payment_status,
-      payment_intent
-    }
+      payment_intent,
+    };
     const result = await payments.insertOne(payment);
     const updateDoc = {
-      $set:{
-        premium : true
-      }
+      $set: {
+        premium: true,
+      },
     };
-    const updateUser = await user.updateOne({_id: new ObjectId(metadata.userId)},updateDoc)
-    return res.send({status:true,result,updateUser})
+    const updateUser = await user.updateOne(
+      { _id: new ObjectId(metadata.userId) },
+      updateDoc,
+    );
+    return res.send({ status: true, result, updateUser });
   }
-  return res.send({status:false,message:'Payment verification failed'})
-})
+  return res.send({ status: false, message: "Payment verification failed" });
+});
 
-app.get ('/user/:id/premium',async(req,res)=>{
-const id = req.params.id;
-if (!ObjectId.isValid(id)) {
-  return res.status(400).send({ error: "Invalid user id" });
-}
+app.get("/user/:id/premium", async (req, res) => {
+  const id = req.params.id;
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).send({ error: "Invalid user id" });
+  }
 
-const result = await user.findOne(
-  { _id: new ObjectId(id) },
-  { projection: { premium: 1 } },
-);
-if (!result) {
-  return res.status(404).send({ error: "User not found" });
-}
+  const result = await user.findOne(
+    { _id: new ObjectId(id) },
+    { projection: { premium: 1 } },
+  );
+  if (!result) {
+    return res.status(404).send({ error: "User not found" });
+  }
 
-return res.send(result);
-})
+  return res.send(result);
+});
 app.get("/", (req, res) => {
   res.send("hello Hireloop-Server");
 });
